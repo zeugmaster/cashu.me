@@ -283,6 +283,25 @@
                             @fiat-mode-changed="fiatKeyboardMode = $event"
                           />
                         </div>
+                        <div
+                          v-if="isCustomPay"
+                          class="row justify-center q-mt-sm"
+                        >
+                          <div
+                            class="col-12 col-sm-11 col-md-8 q-px-sm"
+                            style="max-width: 600px"
+                          >
+                            <q-input
+                              round
+                              outlined
+                              dense
+                              v-model="payInvoiceData.input.comment"
+                              type="text"
+                              label="Memo (optional)"
+                              maxlength="200"
+                            ></q-input>
+                          </div>
+                        </div>
                       </div>
                       <div v-else>
                         <div class="row">
@@ -298,6 +317,48 @@
                       </div>
                     </div>
                   </transition>
+                </div>
+                <!-- Melt quote id for custom methods: the teller matches the
+                     withdrawal by this code. QR encodes the bare quote id
+                     (matching the mint flow); tap to copy. -->
+                <div
+                  v-if="showCustomMeltQuoteId"
+                  class="row justify-center q-mb-md"
+                  data-testid="custom-melt-quote-id"
+                >
+                  <div class="col-12 q-px-md" style="max-width: 340px">
+                    <div
+                      class="qr-container cursor-pointer"
+                      @click="copyMeltQuoteId"
+                    >
+                      <q-responsive :ratio="1" class="q-mx-none">
+                        <vue-qrcode
+                          :value="meltQuoteId"
+                          :options="{ width: 340 }"
+                          class="rounded-borders"
+                          style="width: 100%"
+                        >
+                        </vue-qrcode>
+                      </q-responsive>
+                    </div>
+                    <div
+                      class="q-mt-sm text-center quote-id-display cursor-pointer"
+                      @click="copyMeltQuoteId"
+                    >
+                      <div class="quote-id-caption text-grey-6">
+                        <q-icon
+                          :name="quoteIdCopied ? 'check' : 'content_copy'"
+                          size="xs"
+                          class="q-mr-xs"
+                        />
+                        Quote ID — show this to the teller
+                      </div>
+                      <div class="quote-id-value">
+                        <span class="quote-id-head">{{ meltQuoteIdHead }}</span
+                        ><span class="quote-id-tail">{{ meltQuoteIdTail }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div
                   v-if="showBottomMeltQuoteInformation"
@@ -782,8 +843,14 @@ import MeltQuoteInformation from "components/MeltQuoteInformation.vue";
 import NumericKeyboard from "components/NumericKeyboard.vue";
 import AmountInputComponent from "components/AmountInputComponent.vue";
 import ParseInputComponent from "components/ParseInputComponent.vue";
+import VueQrcode from "@chenfengyuan/vue-qrcode";
+import { copyToClipboard } from "quasar";
 import { mintsSupportingPaymentMethod } from "src/js/mint-payment-methods";
-import { PaymentMethod } from "src/stores/walletTypes";
+import {
+  PaymentMethod,
+  isCustomPaymentMethod,
+  paymentMethodLabel,
+} from "src/stores/walletTypes";
 
 import * as _ from "underscore";
 
@@ -799,6 +866,7 @@ export default defineComponent({
     NumericKeyboard,
     AmountInputComponent,
     ParseInputComponent,
+    VueQrcode,
   },
   props: {},
   data: function () {
@@ -808,6 +876,8 @@ export default defineComponent({
       isPaid: false as boolean,
       waitingForWallet: false as boolean,
       autoCloseTimeout: null as ReturnType<typeof setTimeout> | null,
+      quoteIdCopied: false as boolean,
+      quoteIdCopyTimeout: null as ReturnType<typeof setTimeout> | null,
     };
   },
   watch: {
@@ -992,8 +1062,11 @@ export default defineComponent({
       const quote = this.payInvoiceData?.meltQuote?.response;
       return Boolean(quote?.quote) && quote.amount > 0;
     },
-    payPaymentMethod: function (): PaymentMethod | null {
+    payPaymentMethod: function (): PaymentMethod | string | null {
       if (!this.payInvoiceData?.invoice) return null;
+      if ((this.payInvoiceData.invoice as any).custom) {
+        return (this.payInvoiceData.invoice as any).custom;
+      }
       if (this.payInvoiceData.invoice.onchain) {
         return PaymentMethod.Onchain;
       }
@@ -1008,6 +1081,11 @@ export default defineComponent({
         this.payInvoiceData.paymentMethod === PaymentMethod.Onchain
       ) {
         return "Pay On-chain";
+      }
+      if (this.isCustomPay) {
+        return `Withdraw ${paymentMethodLabel(
+          this.payPaymentMethod as string
+        )}`;
       }
       if (this.payPaymentMethod === PaymentMethod.Bolt12) {
         return this.$t("PayInvoiceDialog.input_data.title_bolt12");
@@ -1059,9 +1137,31 @@ export default defineComponent({
     isOnchainPay: function (): boolean {
       return this.payPaymentMethod === PaymentMethod.Onchain;
     },
+    isCustomPay: function (): boolean {
+      return isCustomPaymentMethod(this.payPaymentMethod as string);
+    },
+    meltQuoteId: function (): string {
+      return this.payInvoiceData?.meltQuote?.response?.quote || "";
+    },
+    meltQuoteIdHead: function (): string {
+      const quote = this.meltQuoteId;
+      return quote.slice(0, Math.max(0, quote.length - 6));
+    },
+    meltQuoteIdTail: function (): string {
+      const quote = this.meltQuoteId;
+      return quote.slice(Math.max(0, quote.length - 6));
+    },
+    showCustomMeltQuoteId: function (): boolean {
+      return (
+        this.isCustomPay &&
+        Boolean(this.meltQuoteId) &&
+        !this.isPaid &&
+        this.payInvoiceData.meltQuote.error == ""
+      );
+    },
     showAmountlessPaymentAmountEntry: function (): boolean {
       return (
-        (this.isBolt12Pay || this.isOnchainPay) &&
+        (this.isBolt12Pay || this.isOnchainPay || this.isCustomPay) &&
         this.hasMintForPayMethod &&
         !this.hasMeltQuote &&
         !this.payInvoiceData.blocking &&
@@ -1188,6 +1288,11 @@ export default defineComponent({
         clearTimeout(this.autoCloseTimeout);
         this.autoCloseTimeout = null;
       }
+      if (this.quoteIdCopyTimeout) {
+        clearTimeout(this.quoteIdCopyTimeout);
+        this.quoteIdCopyTimeout = null;
+      }
+      this.quoteIdCopied = false;
       this.payInvoiceData.show = false;
       this.isPaying = false;
       this.isPaid = false;
@@ -1273,6 +1378,21 @@ export default defineComponent({
       quote.selected_fee_index = option.fee_index;
       quote.fee_reserve = option.fee_reserve;
     },
+    copyMeltQuoteId: async function () {
+      if (!this.meltQuoteId) return;
+      try {
+        await copyToClipboard(this.meltQuoteId);
+        this.quoteIdCopied = true;
+        if (this.quoteIdCopyTimeout) {
+          clearTimeout(this.quoteIdCopyTimeout);
+        }
+        this.quoteIdCopyTimeout = setTimeout(() => {
+          this.quoteIdCopied = false;
+        }, 3000);
+      } catch (error) {
+        console.error("Failed to copy to clipboard:", error);
+      }
+    },
   },
   created: function () {},
 });
@@ -1290,6 +1410,40 @@ export default defineComponent({
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Quote id display for custom payment methods */
+.qr-container {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.quote-id-display {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.quote-id-caption {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.quote-id-value {
+  font-family: monospace;
+  font-size: 1.1em;
+}
+
+.quote-id-head {
+  color: var(--q-color-grey-6, #9e9e9e);
+}
+
+.quote-id-tail {
+  font-weight: 700;
+  font-size: 1.35em;
+  color: var(--q-primary);
 }
 
 .bottom-panel {

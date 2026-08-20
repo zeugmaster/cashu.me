@@ -172,7 +172,12 @@ import {
   Coins as CoinsIcon,
   Zap as ZapIcon,
 } from "lucide-vue-next";
-import { PaymentMethod, UnifiedTransactionType } from "src/stores/walletTypes";
+import {
+  PaymentMethod,
+  UnifiedTransactionType,
+  isCustomPaymentMethod,
+  paymentMethodLabel,
+} from "src/stores/walletTypes";
 import { mintQuoteForHistoryInvoice } from "src/js/invoice-history";
 
 export default defineComponent({
@@ -274,6 +279,7 @@ export default defineComponent({
       "checkInvoiceBolt11",
       "checkOutgoingInvoice",
       "checkOfferAndMintBolt12",
+      "checkCustomAndMint",
       "checkOnchainAndMint",
     ]),
     ...mapActions(useTransactionWorkerStore, [
@@ -369,6 +375,13 @@ export default defineComponent({
     },
 
     getTransactionLabel(transaction) {
+      if (
+        !transaction.label &&
+        transaction.method &&
+        isCustomPaymentMethod(transaction.method)
+      ) {
+        return paymentMethodLabel(transaction.method);
+      }
       return transaction.label || this.getDefaultLabel(transaction);
     },
 
@@ -396,6 +409,7 @@ export default defineComponent({
         const isBolt12 =
           transaction.method === PaymentMethod.Bolt12 ||
           transaction.method === PaymentMethod.Bolt12Subpayment;
+        const isCustom = isCustomPaymentMethod(transaction.method);
 
         if (transaction.amount < 0) {
           this.checkOutgoingInvoice(transaction.quote, true);
@@ -404,6 +418,8 @@ export default defineComponent({
             mintQuoteForHistoryInvoice(transaction),
             true
           );
+        } else if (isCustom) {
+          this.checkCustomAndMint(mintQuoteForHistoryInvoice(transaction), true);
         } else if (transaction.amount > 0) {
           this.checkInvoiceBolt11(transaction.quote, true);
         }
@@ -469,10 +485,17 @@ export default defineComponent({
         const isBolt12 =
           invoice.method === PaymentMethod.Bolt12 ||
           invoice.method === PaymentMethod.Bolt12Subpayment;
+        const isCustom = isCustomPaymentMethod(invoice.method);
 
         if (invoice.amount < 0) {
           this.addOutgoingInvoiceToChecker(invoice.quote, true);
           this.checkOutgoingInvoice(invoice.quote, true);
+        } else if (isCustom) {
+          this.checkCustomAndMint(
+            mintQuoteForHistoryInvoice(invoice),
+            false,
+            false
+          );
         } else if (isBolt12) {
           this.addBolt12OfferToChecker(
             mintQuoteForHistoryInvoice(invoice),

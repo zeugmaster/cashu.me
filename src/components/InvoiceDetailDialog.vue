@@ -33,6 +33,8 @@
                   ? "Lightning Bolt12"
                   : isOnchain
                   ? "On-chain"
+                  : isCustom
+                  ? customMethodTitle
                   : $t("InvoiceDetailDialog.invoice.caption")
               }}
             </q-item-label>
@@ -42,20 +44,22 @@
         <!-- Content -->
         <div class="content-area">
           <q-card-section class="q-pa-none">
-            <div v-if="invoiceData.request" class="row justify-center q-mb-md">
+            <div
+              v-if="invoiceData.request || isCustom"
+              class="row justify-center q-mb-md"
+            >
               <div
                 class="col-12 col-sm-11 col-md-8 q-px-md"
                 style="max-width: 600px"
               >
                 <div class="qr-container">
-                  <a class="text-secondary" :href="qrLink">
+                  <a
+                    class="text-secondary"
+                    :href="isCustom ? undefined : qrLink"
+                  >
                     <q-responsive :ratio="1" class="q-mx-none">
                       <vue-qrcode
-                        :value="
-                          isOnchain
-                            ? 'bitcoin:' + invoiceData.request
-                            : 'lightning:' + invoiceData.request.toUpperCase()
-                        "
+                        :value="qrEncodedValue"
                         :options="{ width: 400 }"
                         class="rounded-borders"
                         style="width: 100%"
@@ -96,6 +100,27 @@
                     class="q-mr-xs"
                   />
                   {{ invoiceData.request }}
+                </div>
+                <!-- Quote id for custom methods: shown for the teller to
+                     match, with the last 6 characters emphasized -->
+                <div
+                  v-if="isCustom"
+                  class="q-mt-md text-center quote-id-display cursor-pointer"
+                  data-testid="custom-quote-id"
+                  @click="onCopyBolt11"
+                >
+                  <div class="quote-id-caption text-grey-7">
+                    <q-icon
+                      :name="copyButtonCopied ? 'check' : 'content_copy'"
+                      size="xs"
+                      class="q-mr-xs"
+                    />
+                    Quote ID
+                  </div>
+                  <div class="quote-id-value">
+                    <span class="quote-id-head">{{ quoteIdHead }}</span
+                    ><span class="quote-id-tail">{{ quoteIdTail }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -149,7 +174,7 @@
               style="max-width: 600px"
             >
               <q-btn
-                v-if="invoiceData.request"
+                v-if="invoiceData.request || isCustom"
                 class="full-width"
                 unelevated
                 size="lg"
@@ -177,7 +202,11 @@ import { useUiStore } from "../stores/ui";
 import { useWorkersStore } from "../stores/workers";
 import MeltQuoteInformation from "./MeltQuoteInformation.vue";
 import MintQuoteInformation from "./MintQuoteInformation.vue";
-import { PaymentMethod } from "src/stores/walletTypes";
+import {
+  PaymentMethod,
+  isCustomPaymentMethod,
+  paymentMethodLabel,
+} from "src/stores/walletTypes";
 // type hint for global mixin
 declare const windowMixin: any;
 
@@ -215,15 +244,43 @@ export default defineComponent({
     isSmallScreen() {
       return this.$q.screen.lt.sm;
     },
-    invoiceMethod(): PaymentMethod {
+    invoiceMethod(): string {
       const method =
         (this.invoiceData as any).method ||
         (this.invoiceData as any).paymentType ||
         (this.invoiceData as any).protocol ||
         this.invoiceData.type;
-      return Object.values(PaymentMethod).includes(method)
-        ? method
-        : PaymentMethod.Bolt11;
+      if (Object.values(PaymentMethod).includes(method)) return method;
+      if (isCustomPaymentMethod(method)) return method;
+      return PaymentMethod.Bolt11;
+    },
+    isCustom(): boolean {
+      return isCustomPaymentMethod(this.invoiceMethod);
+    },
+    customMethodTitle(): string {
+      return paymentMethodLabel(this.invoiceMethod);
+    },
+    // For custom methods the QR encodes the mint-provided request when there
+    // is one, otherwise the bare quote id (no URL scheme — handheld scanners
+    // type the payload verbatim into the teller's match field).
+    qrEncodedValue(): string {
+      if (this.isCustom) {
+        const request = this.invoiceData.request;
+        const quote = this.invoiceData.quote;
+        return request && request !== quote ? request : quote || "";
+      }
+      if (this.isOnchain) {
+        return "bitcoin:" + this.invoiceData.request;
+      }
+      return "lightning:" + (this.invoiceData.request || "").toUpperCase();
+    },
+    quoteIdHead(): string {
+      const quote = this.invoiceData.quote || "";
+      return quote.slice(0, Math.max(0, quote.length - 6));
+    },
+    quoteIdTail(): string {
+      const quote = this.invoiceData.quote || "";
+      return quote.slice(Math.max(0, quote.length - 6));
     },
     copyButtonLabel: function () {
       if (this.copyButtonCopied) {
@@ -261,7 +318,9 @@ export default defineComponent({
   },
   methods: {
     onCopyBolt11: async function () {
-      const request = this.invoiceData?.request;
+      const request = this.isCustom
+        ? this.invoiceData?.quote
+        : this.invoiceData?.request;
       if (request) {
         try {
           await copyToClipboard(request);
@@ -342,6 +401,34 @@ export default defineComponent({
   hyphens: none;
   font-size: 0.9em;
   font-family: monospace;
+}
+
+/* Quote id display for custom payment methods */
+.quote-id-display {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.quote-id-caption {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.quote-id-value {
+  font-family: monospace;
+  font-size: 1.1em;
+}
+
+.quote-id-head {
+  color: var(--q-color-grey-6, #9e9e9e);
+}
+
+.quote-id-tail {
+  font-weight: 700;
+  font-size: 1.35em;
+  color: var(--q-primary);
 }
 
 .checkmark-overlay {

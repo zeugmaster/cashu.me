@@ -32,6 +32,8 @@
               {{
                 isOnchain
                   ? "Receive On-chain"
+                  : isCustom
+                  ? `Receive ${customMethodLabel}`
                   : isBolt12 && !showNpubCashPreview
                   ? "Receive Bolt12"
                   : $t("InvoiceDetailDialog.title")
@@ -43,7 +45,9 @@
             style="position: absolute; right: 16px"
           >
             <q-btn
-              v-if="!isOnchain && bolt11Supported && bolt12Supported"
+              v-if="
+                !isOnchain && !isCustom && bolt11Supported && bolt12Supported
+              "
               flat
               dense
               size="lg"
@@ -257,8 +261,17 @@ import { useMintsStore } from "src/stores/mints";
 import { useSettingsStore } from "src/stores/settings";
 import { usePriceStore } from "src/stores/price";
 import type { InvoiceHistory } from "src/stores/wallet";
-import { PaymentMethod } from "src/stores/walletTypes";
-import { mintSupportsPaymentMethod } from "src/js/mint-payment-methods";
+import {
+  PaymentMethod,
+  type PaymentMethodId,
+  isCustomPaymentMethod,
+  paymentMethodLabel,
+} from "src/stores/walletTypes";
+import {
+  mintSupportsPaymentMethod,
+  advertisedPaymentMethod,
+  type AdvertisedPaymentMethod,
+} from "src/js/mint-payment-methods";
 import { useNpubCashStore } from "src/stores/npubcash";
 import { lightningAddressToLnurl } from "src/js/lnurl";
 
@@ -321,13 +334,32 @@ export default defineComponent({
     isOnchain(): boolean {
       return this.invoiceData.type === PaymentMethod.Onchain;
     },
+    isCustom(): boolean {
+      return isCustomPaymentMethod(this.invoiceData.type as string);
+    },
+    customMethod(): string {
+      return this.isCustom ? (this.invoiceData.type as string) : "";
+    },
+    customMethodLabel(): string {
+      return this.customMethod ? paymentMethodLabel(this.customMethod) : "";
+    },
+    customMethodAdvertisement(): AdvertisedPaymentMethod | null {
+      if (!this.isCustom || !this.activeMint) return null;
+      return advertisedPaymentMethod(
+        this.activeMint,
+        this.customMethod,
+        "mint",
+        this.activeUnit as string
+      );
+    },
     showAmountInput(): boolean {
       if (this.showNpubCashPreview) return false;
       if (this.isOnchain) return false;
       if (!this.isBolt12) return true;
       return this.bolt12AddAmount;
     },
-    mintFilterMethod(): PaymentMethod | PaymentMethod[] {
+    mintFilterMethod(): PaymentMethodId | PaymentMethodId[] {
+      if (this.isCustom) return this.customMethod;
       return this.isOnchain
         ? PaymentMethod.Onchain
         : [PaymentMethod.Bolt11, PaymentMethod.Bolt12];
@@ -389,6 +421,7 @@ export default defineComponent({
       return Boolean(
         this.showCreateInvoiceDialog &&
           !this.isOnchain &&
+          !this.isCustom &&
           !this.isBolt12 &&
           this.activeUnit === "sat" &&
           !this.npubCashAddAmount &&
@@ -432,9 +465,25 @@ export default defineComponent({
       // Bolt11 requires amount > 0
       // Bolt12 and on-chain allow 0 amount (amountless request)
       if (this.isBolt12 || this.isOnchain) return true;
-      return (
-        this.invoiceData.amount != null && Number(this.invoiceData.amount) > 0
-      );
+      if (
+        this.invoiceData.amount == null ||
+        Number(this.invoiceData.amount) <= 0
+      ) {
+        return false;
+      }
+      if (this.isCustom) {
+        const advertised = this.customMethodAdvertisement;
+        const amount = Math.floor(
+          Number(this.invoiceData.amount) * this.activeUnitCurrencyMultiplyer
+        );
+        if (advertised?.min_amount != null && amount < advertised.min_amount) {
+          return false;
+        }
+        if (advertised?.max_amount != null && amount > advertised.max_amount) {
+          return false;
+        }
+      }
+      return true;
     },
     createButtonLabel(): string {
       if (this.isBolt12) {
@@ -546,6 +595,8 @@ export default defineComponent({
       "mintOnPaidBolt12",
       "requestMintOnchain",
       "mintOnPaidOnchain",
+      "requestMintCustom",
+      "mintOnPaidCustom",
     ]),
     ...mapActions(useMintsStore, ["activateMintUrl", "toggleUnit"]),
     enterNpubCashAmountMode() {
@@ -588,6 +639,31 @@ export default defineComponent({
       }
     },
     syncInvoiceTypeWithActiveMint() {
+      if (this.isCustom) {
+        // Keep the custom method as long as the active mint supports it;
+        // otherwise fall back to the regular lightning methods.
+        const mintStore = useMintsStore();
+        const mint = mintStore.mints.find(
+          (m: any) => m.url === mintStore.activeMintUrl
+        );
+        if (
+          mint &&
+          mintSupportsPaymentMethod(
+            mint,
+            this.customMethod,
+            "mint",
+            mintStore.activeUnit
+          )
+        ) {
+          return;
+        }
+        if (this.bolt11Supported) {
+          this.invoiceData.type = PaymentMethod.Bolt11;
+        } else if (this.bolt12Supported) {
+          this.invoiceData.type = PaymentMethod.Bolt12;
+        }
+        return;
+      }
       if (this.invoiceData.type === PaymentMethod.Onchain) {
         if (!this.onchainSupported && this.bolt11Supported) {
           this.invoiceData.type = PaymentMethod.Bolt11;
@@ -623,6 +699,16 @@ export default defineComponent({
           this.showCreateInvoiceDialog = false;
           this.showInvoiceDetails = true;
           await this.mintOnPaidOnchain(mintQuote.quote);
+        } else if (this.isCustom) {
+          const mintQuote = await this.requestMintCustom(
+            this.customMethod,
+            amount,
+            wallet
+          );
+
+          this.showCreateInvoiceDialog = false;
+          this.showInvoiceDetails = true;
+          await this.mintOnPaidCustom(mintQuote.quote);
         } else if (this.isBolt12) {
           // BOLT12 Flow
           const mintQuote = await this.requestMintBolt12(amount, wallet);
