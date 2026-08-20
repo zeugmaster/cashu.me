@@ -11,15 +11,19 @@ import type {
 } from "@cashu/cashu-ts";
 import { PaymentMethod } from "src/stores/walletTypes";
 
+// First-class methods plus any custom method string a mint advertises.
 type IncomingMintMethod =
   | PaymentMethod.Bolt11
   | PaymentMethod.Bolt12
-  | PaymentMethod.Onchain;
+  | PaymentMethod.Onchain
+  | (string & {});
 
-type MintQuotePaidResponse =
+type MintQuotePaidResponse = (
   | MintQuoteBolt11Response
   | MintQuoteBolt12Response
-  | MintQuoteOnchainResponse;
+  | MintQuoteOnchainResponse
+) &
+  Record<string, any>;
 
 type MintOnPaidConfig = {
   command: string;
@@ -34,7 +38,7 @@ type MintOnPaidConfig = {
   ) => Promise<any[] | undefined>;
 };
 
-const mintOnPaidConfigs: Record<IncomingMintMethod, MintOnPaidConfig> = {
+const mintOnPaidConfigs: Record<string, MintOnPaidConfig> = {
   [PaymentMethod.Bolt11]: {
     command: "bolt11_mint_quote",
     oneShot: true,
@@ -81,12 +85,37 @@ const mintOnPaidConfigs: Record<IncomingMintMethod, MintOnPaidConfig> = {
   },
 };
 
+// Custom methods share one config shape: NUT-17 command `{method}_mint_quote`
+// and reusable (amount_paid accounting) semantics, mirroring bolt12.
+function getMintOnPaidConfig(method: IncomingMintMethod): MintOnPaidConfig {
+  const config = mintOnPaidConfigs[method];
+  if (config) return config;
+  return {
+    command: `${method}_mint_quote`,
+    oneShot: false,
+    addToChecker: (quoteId: string) =>
+      useTransactionWorkerStore().addCustomQuoteToChecker?.(method, quoteId),
+    onPaid: async (
+      walletStore: any,
+      quoteId,
+      _invoice,
+      verbose,
+      hideInvoiceDetailsOnMint
+    ) =>
+      walletStore.checkCustomAndMint(
+        quoteId,
+        verbose,
+        hideInvoiceDetailsOnMint
+      ),
+  };
+}
+
 const activeMintQuoteSubscriptions = new Map<string, () => void>();
 
 function nut17Supported(mint: any, method: IncomingMintMethod, unit: string) {
   const supported =
     mint.info?.nuts?.[17]?.supported || mint.info?.nuts?.["17"]?.supported;
-  const command = mintOnPaidConfigs[method].command;
+  const command = getMintOnPaidConfig(method).command;
   return (
     Array.isArray(supported) &&
     supported.some(
@@ -165,7 +194,7 @@ export async function mintOnPaidGeneric(
   if (!invoice) {
     throw new Error("invoice not found");
   }
-  const config = mintOnPaidConfigs[type];
+  const config = getMintOnPaidConfig(type);
 
   // 3. Fallback: Add to Background Checker
   if (kickOffInvoiceChecker) {

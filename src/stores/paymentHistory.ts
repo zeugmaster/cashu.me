@@ -1,7 +1,11 @@
 import { defineStore } from "pinia";
 import { liveQuery } from "dexie";
 import { cashuDb } from "./dexie";
-import { PaymentMethod } from "src/stores/walletTypes";
+import {
+  PaymentMethod,
+  basePaymentMethod,
+  isCustomPaymentMethod,
+} from "src/stores/walletTypes";
 import { currentDateStr } from "src/js/utils";
 import { normalizeCashuQuoteAmounts } from "src/js/cashu-amount";
 
@@ -10,7 +14,9 @@ export type PaymentStatus = "pending" | "paid";
 export type QuoteMethod =
   | PaymentMethod.Bolt11
   | PaymentMethod.Bolt12
-  | PaymentMethod.Onchain;
+  | PaymentMethod.Onchain
+  // custom (generic) payment method advertised by a mint, e.g. "branch"
+  | (string & {});
 
 export type MintQuoteRow = {
   quote: string;
@@ -54,7 +60,7 @@ export type PaymentHistoryRow = {
   quote: string;
   parentQuote?: string;
   method: QuoteMethod;
-  paymentType?: PaymentMethod;
+  paymentType?: PaymentMethod | string;
   amount: number;
   request: string;
   memo: string;
@@ -80,8 +86,8 @@ export type LegacyInvoiceHistory = {
   status: PaymentStatus;
   mint: string;
   unit: string;
-  type?: PaymentMethod;
-  method?: PaymentMethod;
+  type?: PaymentMethod | string;
+  method?: PaymentMethod | string;
   mintQuote?: any;
   meltQuote?: any;
   label?: string;
@@ -114,7 +120,14 @@ function normalizeMethod(method?: string | PaymentMethod): QuoteMethod {
   ) {
     return PaymentMethod.Bolt12;
   }
+  if (typeof method === "string" && isCustomPaymentMethod(method)) {
+    return basePaymentMethod(method);
+  }
   return PaymentMethod.Bolt11;
+}
+
+function isSubpaymentType(type?: string | PaymentMethod): boolean {
+  return typeof type === "string" && type.endsWith("-subpayment");
 }
 
 function inferMethod(
@@ -148,8 +161,8 @@ function inferMethod(
 function inferPaymentType(
   invoice: LegacyInvoiceHistory,
   method: QuoteMethod
-): PaymentMethod {
-  return (invoice.type || invoice.method || method) as PaymentMethod;
+): PaymentMethod | string {
+  return (invoice.type || invoice.method || method) as PaymentMethod | string;
 }
 
 function inferDirection(invoice: LegacyInvoiceHistory): PaymentDirection {
@@ -162,8 +175,7 @@ function quoteIdForInvoice(
 ): string {
   if (
     (invoice.quote?.startsWith("subpayment:") ||
-      invoice.type === PaymentMethod.Bolt12Subpayment ||
-      invoice.type === PaymentMethod.OnchainSubpayment) &&
+      isSubpaymentType(invoice.type)) &&
     invoice.parentQuote
   ) {
     return invoice.parentQuote;
@@ -200,9 +212,7 @@ export function buildPaymentRowsFromLegacyInvoice(
   const quoteId = quoteIdForInvoice(invoice, direction);
   const paymentType = inferPaymentType(invoice, method);
   const isSubpayment =
-    invoice.quote?.startsWith("subpayment:") ||
-    paymentType === PaymentMethod.Bolt12Subpayment ||
-    paymentType === PaymentMethod.OnchainSubpayment;
+    invoice.quote?.startsWith("subpayment:") || isSubpaymentType(paymentType);
   const payment: PaymentHistoryRow = compactRecord({
     id: paymentIdForInvoice(invoice, direction, quoteId),
     direction,

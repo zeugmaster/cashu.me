@@ -49,6 +49,15 @@ import {
   meltGeneric,
   setMeltChangeOutputData,
 } from "./walletMelt";
+import {
+  requestMintCustom,
+  mintOnPaidCustom,
+  checkCustomAndMint,
+  meltQuoteCustomData,
+  meltInvoiceDataCustom,
+  meltCustom,
+  checkOutgoingCustom,
+} from "./walletCustom";
 
 import _ from "underscore";
 import token from "src/js/token";
@@ -107,14 +116,18 @@ import {
   translateLegacyQRToLightningAddress,
 } from "src/js/legacy-qr";
 import { onchainNetwork } from "src/js/onchain";
-import { PaymentMethod } from "src/stores/walletTypes";
+import {
+  PaymentMethod,
+  type PaymentMethodId,
+  isCustomPaymentMethod,
+} from "src/stores/walletTypes";
 
 type Invoice = {
   amount: number;
   request: string;
   quote: string;
   memo: string;
-  type?: PaymentMethod;
+  type?: PaymentMethodId;
 };
 
 const activeSentTokenSubscriptions = new Set<string>();
@@ -146,7 +159,7 @@ export type InvoiceHistory = Invoice & {
   meltOutputData?: any[];
   network?: string;
   parentQuote?: string;
-  method?: PaymentMethod;
+  method?: PaymentMethodId;
   direction?: "mint" | "melt";
 };
 
@@ -881,6 +894,11 @@ export const useWalletStore = defineStore("wallet", {
     meltQuoteInvoiceData: async function () {
       if (
         this.payInvoiceData?.invoice &&
+        (this.payInvoiceData.invoice as any).custom
+      ) {
+        return await meltQuoteCustomData.call(this);
+      } else if (
+        this.payInvoiceData?.invoice &&
         (this.payInvoiceData.invoice as any).onchain
       ) {
         return await meltQuoteInvoiceDataOnchain.call(this);
@@ -899,6 +917,11 @@ export const useWalletStore = defineStore("wallet", {
       mutexPriority: MutexPriority = "normal"
     ) {
       if (
+        this.payInvoiceData?.invoice &&
+        (this.payInvoiceData.invoice as any).custom
+      ) {
+        return await meltInvoiceDataCustom.call(this, silent, mutexPriority);
+      } else if (
         this.payInvoiceData?.invoice &&
         (this.payInvoiceData.invoice as any).onchain
       ) {
@@ -934,6 +957,14 @@ export const useWalletStore = defineStore("wallet", {
     meltInvoiceDataOnchain: meltInvoiceDataOnchain,
     meltOnchain: meltOnchain,
     mintOnPaidOnchain: mintOnPaidOnchain,
+    // Custom (generic) payment method actions
+    requestMintCustom: requestMintCustom,
+    mintOnPaidCustom: mintOnPaidCustom,
+    checkCustomAndMint: checkCustomAndMint,
+    meltQuoteCustomData: meltQuoteCustomData,
+    meltInvoiceDataCustom: meltInvoiceDataCustom,
+    meltCustom: meltCustom,
+    checkOutgoingCustom: checkOutgoingCustom,
     // /check
     checkProofsSpendable: async function (
       proofs: WalletProof[],
@@ -1099,6 +1130,9 @@ export const useWalletStore = defineStore("wallet", {
       if (invoice.type === PaymentMethod.Bolt12) {
         return await this.checkOutgoingInvoiceBolt12(quote, verbose);
       }
+      if (isCustomPaymentMethod(invoice.type)) {
+        return await this.checkOutgoingCustom(quote, verbose);
+      }
       return await this.checkOutgoingInvoiceBolt11(quote, verbose);
     },
     checkOfferAndMintBolt12: async function (
@@ -1252,7 +1286,7 @@ export const useWalletStore = defineStore("wallet", {
       quote: AppMeltQuote,
       mint: string,
       unit: string,
-      method: PaymentMethod = PaymentMethod.Bolt11
+      method: PaymentMethodId = PaymentMethod.Bolt11
     ) {
       const invoice = {
         amount: -(quote.amount + quote.fee_reserve),
