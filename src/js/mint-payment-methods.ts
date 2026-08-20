@@ -3,8 +3,10 @@ import type { StoredMint } from "src/stores/mints";
 import {
   PaymentMethod,
   type PaymentMethodId,
+  basePaymentMethod,
   isCustomPaymentMethod,
   isValidCustomMethodName,
+  paymentMethodLabel,
 } from "src/stores/walletTypes";
 
 function nut4Config(info?: GetInfoResponse) {
@@ -168,6 +170,8 @@ export async function ensurePaymentMethodMintActive(
 
 export type AdvertisedPaymentMethod = {
   method: string;
+  // Optional human-readable display name (NUT-06)
+  method_name?: string;
   unit?: string;
   min_amount?: number;
   max_amount?: number;
@@ -240,4 +244,48 @@ export function advertisedPaymentMethod(
     (m) => m.method === method && (!unit || !m.unit || m.unit === unit)
   );
   return methods[0] ?? null;
+}
+
+// Display name for a payment method: the mint-advertised `method_name`
+// (NUT-06, optional) when present and sane, otherwise the label derived
+// from the method id (matching cdk's derivation).
+const MAX_METHOD_NAME_LENGTH = 30;
+
+function containsControlChars(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+}
+
+export function advertisedDisplayName(
+  entry: AdvertisedPaymentMethod | null | undefined
+): string {
+  const name =
+    typeof entry?.method_name === "string" ? entry.method_name.trim() : "";
+  if (
+    name.length > 0 &&
+    name.length <= MAX_METHOD_NAME_LENGTH &&
+    !containsControlChars(name)
+  ) {
+    return name;
+  }
+  return entry?.method ? paymentMethodLabel(entry.method) : "";
+}
+
+export function paymentMethodDisplayName(
+  mint: StoredMint | undefined,
+  method: string,
+  operation: MintOperation = "mint",
+  unit?: string
+): string {
+  const entry = advertisedPaymentMethod(
+    mint,
+    basePaymentMethod(method),
+    operation,
+    unit
+  );
+  if (entry) return advertisedDisplayName(entry);
+  return paymentMethodLabel(method);
 }

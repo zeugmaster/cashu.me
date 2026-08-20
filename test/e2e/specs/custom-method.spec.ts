@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { WalletPage } from "../pages/WalletPage";
-import { BranchMint, BRANCH_MINT_URL } from "../fixtures/branchMint";
+import {
+  BranchMint,
+  BRANCH_MINT_URL,
+  BRANCH_METHOD_NAME,
+} from "../fixtures/branchMint";
 
 // End-to-end coverage for custom (generic) payment methods: a mint that
 // advertises a non-built-in method ("branch", pecan-style counter
@@ -62,8 +66,9 @@ test("mints and melts via a custom payment method", async ({
   // --- Receive via the advertised custom method -------------------------
   await page.getByTestId("wallet-receive").click();
   await page.getByTestId("receive-branch-option").click();
+  // The advertised NUT-06 method_name is used for display, not the raw id.
   await expect(
-    page.getByText("Receive Branch", { exact: true })
+    page.getByText(`Receive ${BRANCH_METHOD_NAME}`, { exact: true })
   ).toBeVisible();
   await wallet.enterAmount(25);
   await page.getByTestId("create-payment-request").click();
@@ -100,7 +105,7 @@ test("mints and melts via a custom payment method", async ({
   await page.getByTestId("wallet-send").click();
   await page.getByTestId("send-branch-option").click();
   await expect(
-    page.getByText("Withdraw Branch", { exact: true })
+    page.getByText(`Withdraw ${BRANCH_METHOD_NAME}`, { exact: true })
   ).toBeVisible();
   await wallet.enterAmount(10);
   await page.getByTestId("quote-payment-request").click();

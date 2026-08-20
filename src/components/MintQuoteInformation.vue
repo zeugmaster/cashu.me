@@ -133,8 +133,8 @@ import {
 import {
   PaymentMethod,
   isCustomPaymentMethod,
-  paymentMethodLabel,
 } from "src/stores/walletTypes";
+import { paymentMethodDisplayName } from "src/js/mint-payment-methods";
 import {
   fetchAddressTxMetadata,
   onchainAddressExplorerUrl,
@@ -254,7 +254,10 @@ export default defineComponent({
         return "Bolt12";
       }
       if (isCustomPaymentMethod(method)) {
-        return paymentMethodLabel(method);
+        const mint = useMintsStore().mints.find(
+          (m: any) => m.url === this.mintUrl
+        );
+        return paymentMethodDisplayName(mint, method, "mint", this.unit);
       }
       return "Bolt11";
     },

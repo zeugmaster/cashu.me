@@ -176,8 +176,8 @@ import {
   PaymentMethod,
   UnifiedTransactionType,
   isCustomPaymentMethod,
-  paymentMethodLabel,
 } from "src/stores/walletTypes";
+import { paymentMethodDisplayName } from "src/js/mint-payment-methods";
 import { mintQuoteForHistoryInvoice } from "src/js/invoice-history";
 
 export default defineComponent({
@@ -380,7 +380,15 @@ export default defineComponent({
         transaction.method &&
         isCustomPaymentMethod(transaction.method)
       ) {
-        return paymentMethodLabel(transaction.method);
+        const mint = useMintsStore().mints.find(
+          (m) => m.url === transaction.mint
+        );
+        return paymentMethodDisplayName(
+          mint,
+          transaction.method,
+          transaction.amount < 0 ? "melt" : "mint",
+          transaction.unit
+        );
       }
       return transaction.label || this.getDefaultLabel(transaction);
     },

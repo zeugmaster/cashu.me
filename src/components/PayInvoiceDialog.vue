@@ -297,7 +297,7 @@
                               dense
                               v-model="payInvoiceData.input.comment"
                               type="text"
-                              label="Memo (optional)"
+                              :label="$t('PayInvoiceDialog.custom.memo_label')"
                               maxlength="200"
                             ></q-input>
                           </div>
@@ -351,7 +351,7 @@
                           size="xs"
                           class="q-mr-xs"
                         />
-                        Quote ID — show this to the teller
+                        {{ $t("PayInvoiceDialog.custom.quote_id_hint") }}
                       </div>
                       <div class="quote-id-value">
                         <span class="quote-id-head">{{ meltQuoteIdHead }}</span
@@ -845,11 +845,13 @@ import AmountInputComponent from "components/AmountInputComponent.vue";
 import ParseInputComponent from "components/ParseInputComponent.vue";
 import VueQrcode from "@chenfengyuan/vue-qrcode";
 import { copyToClipboard } from "quasar";
-import { mintsSupportingPaymentMethod } from "src/js/mint-payment-methods";
+import {
+  mintsSupportingPaymentMethod,
+  paymentMethodDisplayName,
+} from "src/js/mint-payment-methods";
 import {
   PaymentMethod,
   isCustomPaymentMethod,
-  paymentMethodLabel,
 } from "src/stores/walletTypes";
 
 import * as _ from "underscore";
@@ -1083,9 +1085,9 @@ export default defineComponent({
         return "Pay On-chain";
       }
       if (this.isCustomPay) {
-        return `Withdraw ${paymentMethodLabel(
-          this.payPaymentMethod as string
-        )}`;
+        return this.$t("PayInvoiceDialog.custom.title", {
+          method: this.customPayLabel,
+        }) as string;
       }
       if (this.payPaymentMethod === PaymentMethod.Bolt12) {
         return this.$t("PayInvoiceDialog.input_data.title_bolt12");
@@ -1139,6 +1141,19 @@ export default defineComponent({
     },
     isCustomPay: function (): boolean {
       return isCustomPaymentMethod(this.payPaymentMethod as string);
+    },
+    customPayLabel: function (): string {
+      if (!this.isCustomPay) return "";
+      const method = this.payPaymentMethod as string;
+      const activeMint = (this.mints as StoredMint[]).find(
+        (mint: any) => mint.url === this.activeMintUrl
+      );
+      return paymentMethodDisplayName(
+        activeMint,
+        method,
+        "melt",
+        this.activeUnit as string
+      );
     },
     meltQuoteId: function (): string {
       return this.payInvoiceData?.meltQuote?.response?.quote || "";

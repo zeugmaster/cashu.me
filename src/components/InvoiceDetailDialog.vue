@@ -115,7 +115,7 @@
                       size="xs"
                       class="q-mr-xs"
                     />
-                    Quote ID
+                    {{ $t("InvoiceDetailDialog.custom.quote_id") }}
                   </div>
                   <div class="quote-id-value">
                     <span class="quote-id-head">{{ quoteIdHead }}</span
@@ -205,8 +205,9 @@ import MintQuoteInformation from "./MintQuoteInformation.vue";
 import {
   PaymentMethod,
   isCustomPaymentMethod,
-  paymentMethodLabel,
 } from "src/stores/walletTypes";
+import { useMintsStore } from "src/stores/mints";
+import { paymentMethodDisplayName } from "src/js/mint-payment-methods";
 // type hint for global mixin
 declare const windowMixin: any;
 
@@ -258,7 +259,15 @@ export default defineComponent({
       return isCustomPaymentMethod(this.invoiceMethod);
     },
     customMethodTitle(): string {
-      return paymentMethodLabel(this.invoiceMethod);
+      const mint = useMintsStore().mints.find(
+        (m: any) => m.url === this.invoiceData.mint
+      );
+      return paymentMethodDisplayName(
+        mint,
+        this.invoiceMethod,
+        this.invoiceData.amount < 0 ? "melt" : "mint",
+        this.invoiceData.unit
+      );
     },
     // For custom methods the QR encodes the mint-provided request when there
     // is one, otherwise the bare quote id (no URL scheme — handheld scanners

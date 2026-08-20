@@ -109,7 +109,7 @@
               </div>
               <div class="col q-ml-md">
                 <div class="text-body1 text-weight-medium">
-                  {{ methodLabel(customMethod.method) }}
+                  {{ methodDisplay(customMethod) }}
                 </div>
               </div>
             </div>
@@ -138,15 +138,13 @@ import {
   Bitcoin as BitcoinIcon,
   Banknote as BanknoteIcon,
 } from "lucide-vue-next";
-import {
-  PaymentMethod,
-  paymentMethodLabel,
-} from "src/stores/walletTypes";
+import { PaymentMethod } from "src/stores/walletTypes";
 import { notifyWarning } from "src/js/notify";
 import {
   ensurePaymentMintActive,
   firstMintSupportingPaymentMethods,
   customPaymentMethodsForMints,
+  advertisedDisplayName,
   type AdvertisedPaymentMethod,
 } from "src/js/mint-payment-methods";
 
@@ -227,7 +225,7 @@ export default defineComponent({
   methods: {
     ...mapActions(useMintsStore, ["selectMintUrl"]),
     ...mapActions(useCameraStore, ["closeCamera", "showCamera"]),
-    methodLabel: paymentMethodLabel,
+    methodDisplay: advertisedDisplayName,
     showCustomPayDialog: async function (method: string) {
       const mintResult = await ensurePaymentMintActive(
         this.mints as any,

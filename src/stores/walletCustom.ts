@@ -11,9 +11,9 @@ import { useTransactionWorkerStore } from "./transactionWorker";
 import {
   basePaymentMethod,
   isCustomPaymentMethod,
-  paymentMethodLabel,
   subpaymentMethod,
 } from "src/stores/walletTypes";
+import { paymentMethodDisplayName } from "src/js/mint-payment-methods";
 import { mintOnPaidGeneric } from "./walletWebsocket";
 import { type AppMeltQuote, normalizeMeltQuote } from "./walletMelt";
 import { createSubpaymentHistoryQuote } from "src/js/invoice-history";
@@ -102,6 +102,9 @@ export async function requestMintCustom(
     };
     const data = await mintWallet.createMintQuote(method, payload);
 
+    const storedMint = useMintsStore().mints.find(
+      (m: any) => m.url === mintWallet.mint.mintUrl
+    );
     this.invoiceData.amount = amount;
     this.invoiceData.request = data.request || "";
     this.invoiceData.quote = data.quote;
@@ -115,7 +118,7 @@ export async function requestMintCustom(
 
     await this.addPaymentHistory({
       ...this.invoiceData,
-      label: paymentMethodLabel(method),
+      label: paymentMethodDisplayName(storedMint, method, "mint", mintWallet.unit),
       type: method,
     });
 
@@ -259,7 +262,12 @@ export async function checkCustomAndMint(
         paidDate: currentDateStr(),
         status: "paid",
         mintQuote: normalizedMintQuote,
-        label: `${paymentMethodLabel(method)} Subpayment`,
+        label: `${paymentMethodDisplayName(
+          mint,
+          method,
+          "mint",
+          invoice.unit
+        )} Subpayment`,
         type: subpaymentMethod(method),
       });
     } else {

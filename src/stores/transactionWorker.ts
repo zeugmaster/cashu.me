@@ -9,9 +9,9 @@ import {
   PaymentMethod,
   basePaymentMethod,
   isCustomPaymentMethod,
-  paymentMethodLabel,
   subpaymentMethod,
 } from "src/stores/walletTypes";
+import { paymentMethodDisplayName } from "src/js/mint-payment-methods";
 import { useTokensStore } from "src/stores/tokens";
 import { useMintsStore, type StoredMint } from "src/stores/mints";
 import {
@@ -1191,7 +1191,14 @@ export const useTransactionWorkerStore = defineStore("transactionWorker", {
             ? "Bolt12 Subpayment"
             : method === PaymentMethod.Onchain
             ? "On-chain Subpayment"
-            : `${paymentMethodLabel(method)} Subpayment`;
+            : `${paymentMethodDisplayName(
+                useMintsStore().mints.find(
+                  (m) => m.url === entry.invoice.mint
+                ),
+                method,
+                "mint",
+                entry.invoice.unit
+              )} Subpayment`;
 
         if (entry.invoice.status === "paid") {
           await walletStore.addPaymentHistory({

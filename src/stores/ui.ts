@@ -15,6 +15,28 @@ import { useSettingsStore } from "./settings";
 
 export type MutexPriority = "foreground" | "normal" | "background";
 
+// Units that are real ISO 4217 currency codes (fiat mints) render as
+// currencies; other custom units render as plain integers with their code.
+let isoCurrencyCodes: Set<string> | null = null;
+function isIsoCurrency(unit: string): boolean {
+  if (isoCurrencyCodes === null) {
+    try {
+      isoCurrencyCodes = new Set(
+        (
+          Intl as unknown as {
+            supportedValuesOf: (key: string) => string[];
+          }
+        )
+          .supportedValuesOf("currency")
+          .map((code) => code.toLowerCase())
+      );
+    } catch {
+      isoCurrencyCodes = new Set();
+    }
+  }
+  return isoCurrencyCodes.has(unit.toLowerCase());
+}
+
 type MutexWaiter = {
   priority: MutexPriority;
   resolve: () => void;
@@ -170,20 +192,25 @@ export const useUiStore = defineStore("ui", {
       if (currency == "msat") return this.fromMsat(value);
       if (currency == "usd") value = value / 100;
       if (currency == "eur") value = value / 100;
-      try {
-        return new Intl.NumberFormat(navigator.language, {
-          style: "currency",
-          currency: currency,
-        }).format(value);
-      } catch {
-        return (
-          new Intl.NumberFormat(navigator.language).format(value) +
-          " " +
-          String(currency)
-        );
+      // Fiat units render as currencies. Custom units (e.g. from mints with
+      // generic payment methods) are integer face values without decimal
+      // metadata, so they render as plain numbers with the unit code —
+      // currency formatting would invent decimals that do not exist.
+      if (currency == "usd" || currency == "eur" || isIsoCurrency(currency)) {
+        try {
+          return new Intl.NumberFormat(navigator.language, {
+            style: "currency",
+            currency: currency,
+          }).format(value);
+        } catch {
+          // fall through to plain formatting
+        }
       }
-      // + " " +
-      // currency.toUpperCase()
+      return (
+        new Intl.NumberFormat(navigator.language).format(value) +
+        " " +
+        String(currency).toUpperCase()
+      );
     },
     toggleDebugConsole() {
       this.showDebugConsole = !this.showDebugConsole;

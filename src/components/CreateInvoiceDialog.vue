@@ -33,7 +33,9 @@
                 isOnchain
                   ? "Receive On-chain"
                   : isCustom
-                  ? `Receive ${customMethodLabel}`
+                  ? $t("InvoiceDetailDialog.custom.receive_title", {
+                      method: customMethodLabel,
+                    })
                   : isBolt12 && !showNpubCashPreview
                   ? "Receive Bolt12"
                   : $t("InvoiceDetailDialog.title")
@@ -270,6 +272,7 @@ import {
 import {
   mintSupportsPaymentMethod,
   advertisedPaymentMethod,
+  advertisedDisplayName,
   type AdvertisedPaymentMethod,
 } from "src/js/mint-payment-methods";
 import { useNpubCashStore } from "src/stores/npubcash";
@@ -341,7 +344,10 @@ export default defineComponent({
       return this.isCustom ? (this.invoiceData.type as string) : "";
     },
     customMethodLabel(): string {
-      return this.customMethod ? paymentMethodLabel(this.customMethod) : "";
+      if (!this.customMethod) return "";
+      const advertised = this.customMethodAdvertisement;
+      if (advertised) return advertisedDisplayName(advertised);
+      return paymentMethodLabel(this.customMethod);
     },
     customMethodAdvertisement(): AdvertisedPaymentMethod | null {
       if (!this.isCustom || !this.activeMint) return null;

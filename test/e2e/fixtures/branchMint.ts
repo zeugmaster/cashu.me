@@ -16,6 +16,8 @@ export const BRANCH_MINT_PORT = 8095;
 export const BRANCH_MINT_URL = `http://127.0.0.1:${BRANCH_MINT_PORT}`;
 export const BRANCH_UNIT = "ora";
 export const BRANCH_METHOD = "branch";
+// NUT-06 optional display name for the method
+export const BRANCH_METHOD_NAME = "Bux Counter";
 
 const MAX_ORDER = 20; // denominations 1..2^19
 
@@ -125,6 +127,7 @@ export class BranchMint {
           methods: [
             {
               method: BRANCH_METHOD,
+              method_name: BRANCH_METHOD_NAME,
               unit: BRANCH_UNIT,
               min_amount: 1,
               max_amount: 1_000_000,
@@ -136,6 +139,7 @@ export class BranchMint {
           methods: [
             {
               method: BRANCH_METHOD,
+              method_name: BRANCH_METHOD_NAME,
               unit: BRANCH_UNIT,
               min_amount: 1,
               max_amount: 1_000_000,

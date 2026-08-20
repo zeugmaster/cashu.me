@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  advertisedDisplayName,
   advertisedPaymentMethod,
   customPaymentMethods,
   customPaymentMethodsForMints,
   mintSupportsPaymentMethod,
+  paymentMethodDisplayName,
 } from "src/js/mint-payment-methods";
 import {
   PaymentMethod,
@@ -35,6 +37,8 @@ describe("custom payment method identity", () => {
     expect(isValidCustomMethodName("")).toBe(false);
     expect(isValidCustomMethodName("x".repeat(33))).toBe(false);
     expect(isValidCustomMethodName(42)).toBe(false);
+    // "-subpayment" is reserved for internal history entry types
+    expect(isValidCustomMethodName("branch-subpayment")).toBe(false);
   });
 
   it("round-trips subpayment types", () => {
@@ -46,9 +50,64 @@ describe("custom payment method identity", () => {
     );
   });
 
-  it("labels methods for display", () => {
+  it("derives labels the way cdk does", () => {
     expect(paymentMethodLabel("branch")).toBe("Branch");
     expect(paymentMethodLabel("branch-subpayment")).toBe("Branch");
+    expect(paymentMethodLabel("bank_transfer")).toBe("Bank Transfer");
+    expect(paymentMethodLabel("in-person")).toBe("In Person");
+  });
+});
+
+describe("method display names (NUT-06 method_name)", () => {
+  it("prefers a sane advertised method_name", () => {
+    expect(
+      advertisedDisplayName({ method: "branch", method_name: "Bux Counter" })
+    ).toBe("Bux Counter");
+    expect(advertisedDisplayName({ method: "branch" })).toBe("Branch");
+    expect(
+      advertisedDisplayName({ method: "branch", method_name: "  " })
+    ).toBe("Branch");
+    expect(
+      advertisedDisplayName({ method: "branch", method_name: "x".repeat(31) })
+    ).toBe("Branch");
+    expect(
+      advertisedDisplayName({ method: "branch", method_name: "a\tb" })
+    ).toBe("Branch");
+    expect(advertisedDisplayName(null)).toBe("");
+  });
+
+  it("resolves display names from a mint advertisement", () => {
+    const mint = {
+      url: "https://named.example",
+      keys: [],
+      keysets: [],
+      info: {
+        nuts: {
+          4: {
+            methods: [
+              {
+                method: "branch",
+                method_name: "Bux Counter",
+                unit: "ora",
+              },
+            ],
+            disabled: false,
+          },
+        },
+      },
+    };
+    expect(paymentMethodDisplayName(mint, "branch", "mint", "ora")).toBe(
+      "Bux Counter"
+    );
+    // subpayment types resolve through their base method
+    expect(
+      paymentMethodDisplayName(mint, "branch-subpayment", "mint", "ora")
+    ).toBe("Bux Counter");
+    // unknown mint or missing advertisement falls back to derivation
+    expect(paymentMethodDisplayName(undefined, "branch")).toBe("Branch");
+    expect(paymentMethodDisplayName(mint, "branch", "melt", "ora")).toBe(
+      "Branch"
+    );
   });
 });
 
